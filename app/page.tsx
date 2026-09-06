@@ -1,194 +1,123 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { Ban, CheckCircle2, ChevronRight, Layers3, Megaphone, Plus, Search, ShieldAlert, Users } from 'lucide-react'
+import { Ban, BriefcaseBusiness, CheckCircle2, Contact, Layers3, Megaphone, MessageCircleMore, Plus, Radio, Search, ShieldAlert, Users, UsersRound } from 'lucide-react'
 
-type Group = {
+type Source = 'WhatsApp' | 'WhatsApp Business'
+type RecipientType = 'personal' | 'group' | 'community' | 'channel'
+type Recipient = {
   id: string
   name: string
-  category: string
-  area: string
-  priority: 'High' | 'Normal'
+  type: RecipientType
+  source: Source
+  phone?: string
+  category?: string
+  area?: string
   canSend: boolean
 }
 
 type Campaign = {
-  id: string
   title: string
   message: string
-  selectedGroupIds: string[]
+  selectedIds: string[]
   batchSize: number
   intervalMinutes: number
 }
 
-const starterGroups: Group[] = [
-  { id: 'g1', name: 'Sakoli News 01', category: 'News', area: 'Sakoli', priority: 'High', canSend: true },
-  { id: 'g2', name: 'Arjuni Updates', category: 'Political', area: 'Arjuni Morgaon', priority: 'Normal', canSend: true },
-  { id: 'g3', name: 'Gondia Media', category: 'Media', area: 'Gondia', priority: 'High', canSend: true },
+const starter: Recipient[] = [
+  { id:'g1', name:'Sakoli News 01', type:'group', source:'WhatsApp Business', category:'News', area:'Sakoli', canSend:true },
+  { id:'g2', name:'Arjuni Updates', type:'group', source:'WhatsApp', category:'Political', area:'Arjuni Morgaon', canSend:true },
 ]
 
-export default function Home() {
-  const [groups, setGroups] = useState<Group[]>(starterGroups)
-  const [query, setQuery] = useState('')
-  const [showAdd, setShowAdd] = useState(false)
-  const [tab, setTab] = useState<'groups' | 'campaign'>('groups')
-  const [campaign, setCampaign] = useState<Campaign>({
-    id: 'c1',
-    title: 'आजची बातमी',
-    message: '',
-    selectedGroupIds: [],
-    batchSize: 5,
-    intervalMinutes: 10,
-  })
+const labels: Record<RecipientType,string> = { personal:'Personal', group:'Groups', community:'Communities', channel:'Channels' }
 
-  useEffect(() => {
-    const saved = localStorage.getItem('jb-groups')
-    if (saved) setGroups(JSON.parse(saved))
-  }, [])
+export default function Home(){
+  const [source,setSource] = useState<Source | null>(null)
+  const [remember,setRemember] = useState(true)
+  const [recipients,setRecipients] = useState<Recipient[]>(starter)
+  const [masterTab,setMasterTab] = useState<RecipientType>('group')
+  const [pageTab,setPageTab] = useState<'master'|'campaign'>('master')
+  const [query,setQuery] = useState('')
+  const [showAdd,setShowAdd] = useState(false)
+  const [campaign,setCampaign] = useState<Campaign>({ title:'आजची बातमी', message:'', selectedIds:[], batchSize:5, intervalMinutes:10 })
 
-  useEffect(() => {
-    localStorage.setItem('jb-groups', JSON.stringify(groups))
-  }, [groups])
+  useEffect(()=>{
+    const savedSource = localStorage.getItem('jb-wa-source') as Source | null
+    const savedRecipients = localStorage.getItem('jb-recipients')
+    if(savedSource) setSource(savedSource)
+    if(savedRecipients) setRecipients(JSON.parse(savedRecipients))
+  },[])
 
-  const filtered = useMemo(() => {
-    const q = query.toLowerCase().trim()
-    return groups.filter(g => !q || [g.name, g.category, g.area].some(v => v.toLowerCase().includes(q)))
-  }, [groups, query])
+  useEffect(()=>{ localStorage.setItem('jb-recipients',JSON.stringify(recipients)) },[recipients])
 
-  const batches = useMemo(() => {
-    const selected = groups.filter(g => campaign.selectedGroupIds.includes(g.id) && g.canSend)
-    const out: Group[][] = []
-    for (let i = 0; i < selected.length; i += campaign.batchSize) out.push(selected.slice(i, i + campaign.batchSize))
-    return out
-  }, [campaign.selectedGroupIds, campaign.batchSize, groups])
+  const visible = useMemo(()=> recipients.filter(r => r.type===masterTab && (!source || r.source===source) && (!query || [r.name,r.phone,r.category,r.area].filter(Boolean).some(v=>String(v).toLowerCase().includes(query.toLowerCase())))),[recipients,masterTab,source,query])
+  const eligible = recipients.filter(r=>r.canSend && (!source || r.source===source))
+  const selected = eligible.filter(r=>campaign.selectedIds.includes(r.id))
+  const batches: Recipient[][] = []
+  for(let i=0;i<selected.length;i+=campaign.batchSize) batches.push(selected.slice(i,i+campaign.batchSize))
 
-  const toggleGroup = (id: string) => {
-    setCampaign(c => ({
-      ...c,
-      selectedGroupIds: c.selectedGroupIds.includes(id)
-        ? c.selectedGroupIds.filter(x => x !== id)
-        : [...c.selectedGroupIds, id],
-    }))
+  function chooseSource(s:Source){ setSource(s); if(remember) localStorage.setItem('jb-wa-source',s) }
+  function changeSource(){ localStorage.removeItem('jb-wa-source'); setSource(null) }
+  function toggle(id:string){ setCampaign(c=>({...c,selectedIds:c.selectedIds.includes(id)?c.selectedIds.filter(x=>x!==id):[...c.selectedIds,id]})) }
+
+  async function importContacts(){
+    const nav = navigator as Navigator & { contacts?: { select:(props:string[],opts:{multiple:boolean})=>Promise<Array<{name?:string[],tel?:string[]}>> } }
+    if(!nav.contacts?.select){ alert('या browser मध्ये Contact Picker उपलब्ध नाही. Personal contact manually add करा.'); return }
+    try{
+      const picked = await nav.contacts.select(['name','tel'],{multiple:true})
+      const fresh: Recipient[] = picked.flatMap((c,i)=> (c.tel||[]).slice(0,1).map(t=>({id:crypto.randomUUID(),name:c.name?.[0]||t,type:'personal' as const,source:source||'WhatsApp',phone:t,canSend:true})))
+      setRecipients(r=>[...r,...fresh])
+    }catch{}
   }
 
-  return (
-    <main className="shell">
-      <header className="topbar">
-        <div>
-          <div className="eyebrow">JB DIGITAL</div>
-          <h1>WhatsApp Group Manager</h1>
-        </div>
-        <div className="wa-dot">WA</div>
-      </header>
+  return <main className="shell">
+    {!source && <SourceModal remember={remember} setRemember={setRemember} onChoose={chooseSource}/>} 
 
-      <section className="stats">
-        <Stat icon={<Users size={20}/>} label="Active Groups" value={groups.filter(g => g.canSend).length} />
-        <Stat icon={<Ban size={20}/>} label="Blocked" value={groups.filter(g => !g.canSend).length} />
-        <Stat icon={<Layers3 size={20}/>} label="Selected" value={campaign.selectedGroupIds.length} />
-      </section>
+    <header className="topbar">
+      <div><div className="eyebrow">JB DIGITAL</div><h1>WhatsApp Distribution Manager</h1><div className="source-line">{source || 'Choose WhatsApp'} {source && <button onClick={changeSource}>Change</button>}</div></div>
+      <div className="wa-dot">WA</div>
+    </header>
 
-      <nav className="tabs">
-        <button className={tab === 'groups' ? 'active' : ''} onClick={() => setTab('groups')}>Group Master</button>
-        <button className={tab === 'campaign' ? 'active' : ''} onClick={() => setTab('campaign')}>Campaign Queue</button>
-      </nav>
+    <section className="stats">
+      <Stat label="Personal" value={recipients.filter(r=>r.type==='personal'&&(!source||r.source===source)).length}/>
+      <Stat label="Groups" value={recipients.filter(r=>r.type==='group'&&r.canSend&&(!source||r.source===source)).length}/>
+      <Stat label="Community + Channel" value={recipients.filter(r=>(r.type==='community'||r.type==='channel')&&(!source||r.source===source)).length}/>
+    </section>
 
-      {tab === 'groups' ? (
-        <section>
-          <div className="toolbar">
-            <div className="search"><Search size={18}/><input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search group, area, category" /></div>
-            <button className="primary" onClick={() => setShowAdd(true)}><Plus size={18}/> Add Group</button>
-          </div>
+    <nav className="tabs"><button className={pageTab==='master'?'active':''} onClick={()=>setPageTab('master')}>Recipient Master</button><button className={pageTab==='campaign'?'active':''} onClick={()=>setPageTab('campaign')}>Campaign Queue</button></nav>
 
-          <div className="notice"><ShieldAlert size={19}/><div><b>Admin-only protection is ON.</b><span>Groups where you cannot send messages are blocked from being added to the active broadcast list.</span></div></div>
-
-          <div className="cards">
-            {filtered.map(g => (
-              <article className="group-card" key={g.id}>
-                <div className="avatar">{g.name.slice(0,2).toUpperCase()}</div>
-                <div className="group-main">
-                  <div className="group-title"><h3>{g.name}</h3>{g.priority === 'High' && <span className="pill high">High</span>}</div>
-                  <p>{g.category} · {g.area}</p>
-                  <div className={g.canSend ? 'status ok' : 'status blocked'}>{g.canSend ? <><CheckCircle2 size={15}/> Can Send</> : <><Ban size={15}/> Admin Only</>}</div>
-                </div>
-                <ChevronRight size={20}/>
-              </article>
-            ))}
-          </div>
-        </section>
-      ) : (
-        <section className="campaign-grid">
-          <div className="panel">
-            <h2><Megaphone size={21}/> Create Campaign</h2>
-            <label>Campaign title<input value={campaign.title} onChange={e => setCampaign(c => ({...c, title: e.target.value}))}/></label>
-            <label>Message<textarea rows={7} value={campaign.message} onChange={e => setCampaign(c => ({...c, message: e.target.value}))} placeholder="Type message / caption here..."/></label>
-            <div className="two-col">
-              <label>Batch size<input type="number" min={1} max={5} value={campaign.batchSize} onChange={e => setCampaign(c => ({...c, batchSize: Math.min(5, Math.max(1, Number(e.target.value))) }))}/></label>
-              <label>Gap (minutes)<input type="number" min={1} value={campaign.intervalMinutes} onChange={e => setCampaign(c => ({...c, intervalMinutes: Math.max(1, Number(e.target.value)) }))}/></label>
-            </div>
-          </div>
-
-          <div className="panel">
-            <h2><Users size={21}/> Select Groups</h2>
-            <p className="muted">Only send-enabled groups are available.</p>
-            <div className="selector-list">
-              {groups.filter(g => g.canSend).map(g => (
-                <label className="checkrow" key={g.id}>
-                  <input type="checkbox" checked={campaign.selectedGroupIds.includes(g.id)} onChange={() => toggleGroup(g.id)}/>
-                  <span><b>{g.name}</b><small>{g.category} · {g.area}</small></span>
-                </label>
-              ))}
-            </div>
-          </div>
-
-          <div className="panel full">
-            <h2><Layers3 size={21}/> Delivery Queue</h2>
-            {batches.length === 0 ? <p className="muted">Select groups to generate batches.</p> : batches.map((batch, index) => (
-              <div className="batch" key={index}>
-                <div><b>Batch {index + 1}</b><span>{batch.length} groups · then wait {campaign.intervalMinutes} min</span></div>
-                <div className="chips">{batch.map(g => <span key={g.id}>{g.name}</span>)}</div>
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
-
-      {showAdd && <AddGroupModal onClose={() => setShowAdd(false)} onAdd={(g) => { setGroups(prev => [...prev, g]); setShowAdd(false) }} />}
-    </main>
-  )
-}
-
-function Stat({icon,label,value}:{icon:React.ReactNode,label:string,value:number}) {
-  return <div className="stat"><div className="stat-icon">{icon}</div><div><strong>{value}</strong><span>{label}</span></div></div>
-}
-
-function AddGroupModal({onClose,onAdd}:{onClose:()=>void,onAdd:(g:Group)=>void}) {
-  const [name,setName] = useState('')
-  const [category,setCategory] = useState('News')
-  const [area,setArea] = useState('')
-  const [priority,setPriority] = useState<'High'|'Normal'>('Normal')
-  const [canSend,setCanSend] = useState<boolean | null>(null)
-  const blocked = canSend === false
-  const valid = name.trim() && area.trim() && canSend === true
-
-  return <div className="modal-wrap" onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}>
-    <div className="modal">
-      <div className="modal-head"><div><div className="eyebrow">GROUP MASTER</div><h2>Add WhatsApp Group</h2></div><button className="iconbtn" onClick={onClose}>×</button></div>
-      <label>Group name<input value={name} onChange={e=>setName(e.target.value)} placeholder="e.g. Sakoli News 02"/></label>
-      <div className="two-col"><label>Category<select value={category} onChange={e=>setCategory(e.target.value)}><option>News</option><option>Political</option><option>Media</option><option>Jobs</option><option>Business</option><option>Health</option><option>Other</option></select></label><label>Area<input value={area} onChange={e=>setArea(e.target.value)} placeholder="Sakoli"/></label></div>
-      <label>Priority<select value={priority} onChange={e=>setPriority(e.target.value as 'High'|'Normal')}><option>Normal</option><option>High</option></select></label>
-
-      <div className="permission-box">
-        <b>Can you send messages in this group?</b>
-        <p>If WhatsApp shows “Only admins can send messages”, choose No.</p>
-        <div className="choice-row">
-          <button className={canSend === true ? 'choice yes selected' : 'choice yes'} onClick={()=>setCanSend(true)}><CheckCircle2 size={18}/> Yes, I can send</button>
-          <button className={canSend === false ? 'choice no selected' : 'choice no'} onClick={()=>setCanSend(false)}><Ban size={18}/> No, admin only</button>
-        </div>
+    {pageTab==='master' ? <>
+      <div className="type-tabs">
+        {(['personal','group','community','channel'] as RecipientType[]).map(t=><button key={t} className={masterTab===t?'active':''} onClick={()=>setMasterTab(t)}>{iconFor(t)} {labels[t]}</button>)}
+      </div>
+      <div className="toolbar">
+        <div className="search"><Search size={18}/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder={`Search ${labels[masterTab].toLowerCase()}`}/></div>
+        <div className="toolbar-actions">{masterTab==='personal'&&<button className="secondary" onClick={importContacts}><Contact size={18}/> Import Contacts</button>}<button className="primary" onClick={()=>setShowAdd(true)}><Plus size={18}/> Add {labels[masterTab]}</button></div>
       </div>
 
-      {blocked && <div className="error"><ShieldAlert size={19}/><div><b>This group cannot be added.</b><span>Admin-only groups are excluded from the broadcast master list.</span></div></div>}
+      {masterTab==='group' && <div className="notice"><ShieldAlert size={19}/><div><b>Admin-only protection is ON.</b><span>Only groups where you can send messages are kept active.</span></div></div>}
+      {(masterTab==='group'||masterTab==='community'||masterTab==='channel') && <div className="info-note">WhatsApp currently does not expose an official public API for this web app to automatically read your full {labels[masterTab].toLowerCase()} list. Add/register them here once and they remain available in your master.</div>}
 
-      <button disabled={!valid} className="primary fullbtn" onClick={() => valid && onAdd({id:crypto.randomUUID(), name:name.trim(), category, area:area.trim(), priority, canSend:true})}><Plus size={18}/> Add to Group Master</button>
-    </div>
-  </div>
+      <div className="cards">{visible.length===0?<div className="empty">No {labels[masterTab].toLowerCase()} added yet.</div>:visible.map(r=><article className="group-card" key={r.id}><div className="avatar">{r.name.slice(0,2).toUpperCase()}</div><div className="group-main"><div className="group-title"><h3>{r.name}</h3><span className="pill source-pill">{r.source==='WhatsApp Business'?'Business':'WhatsApp'}</span></div><p>{r.phone || [r.category,r.area].filter(Boolean).join(' · ') || labels[r.type]}</p><div className={r.canSend?'status ok':'status blocked'}>{r.canSend?<><CheckCircle2 size={15}/> Active</>:<><Ban size={15}/> Admin Only</>}</div></div></article>)}</div>
+    </> : <section className="campaign-grid">
+      <div className="panel"><h2><Megaphone size={21}/> Create Campaign</h2><label>Campaign title<input value={campaign.title} onChange={e=>setCampaign(c=>({...c,title:e.target.value}))}/></label><label>Message<textarea rows={7} value={campaign.message} onChange={e=>setCampaign(c=>({...c,message:e.target.value}))}/></label><div className="two-col"><label>Batch size<input type="number" min={1} max={5} value={campaign.batchSize} onChange={e=>setCampaign(c=>({...c,batchSize:Math.min(5,Math.max(1,Number(e.target.value)))}))}/></label><label>Gap (minutes)<input type="number" min={1} value={campaign.intervalMinutes} onChange={e=>setCampaign(c=>({...c,intervalMinutes:Math.max(1,Number(e.target.value))}))}/></label></div></div>
+      <div className="panel"><h2><Users size={21}/> Select Recipients</h2><p className="muted">Source: {source}</p><div className="selector-list">{eligible.map(r=><label className="checkrow" key={r.id}><input type="checkbox" checked={campaign.selectedIds.includes(r.id)} onChange={()=>toggle(r.id)}/><span><b>{r.name}</b><small>{labels[r.type]} · {r.source}</small></span></label>)}</div></div>
+      <div className="panel full"><h2><Layers3 size={21}/> Delivery Queue</h2>{batches.length===0?<p className="muted">Select recipients to generate batches.</p>:batches.map((b,i)=><div className="batch" key={i}><div><b>Batch {i+1}</b><span>{b.length} recipients · then wait {campaign.intervalMinutes} min</span></div><div className="chips">{b.map(r=><span key={r.id}>{r.name}</span>)}</div></div>)}</div>
+    </section>}
+
+    {showAdd && <AddRecipientModal type={masterTab} source={source||'WhatsApp'} onClose={()=>setShowAdd(false)} onAdd={r=>{setRecipients(x=>[...x,r]);setShowAdd(false)}}/>}
+  </main>
+}
+
+function iconFor(t:RecipientType){ if(t==='personal')return <Contact size={17}/>; if(t==='group')return <Users size={17}/>; if(t==='community')return <UsersRound size={17}/>; return <Radio size={17}/> }
+function Stat({label,value}:{label:string,value:number}){return <div className="stat"><div><strong>{value}</strong><span>{label}</span></div></div>}
+
+function SourceModal({remember,setRemember,onChoose}:{remember:boolean,setRemember:(v:boolean)=>void,onChoose:(s:Source)=>void}){
+  return <div className="modal-wrap"><div className="modal source-modal"><div className="eyebrow">WELCOME</div><h2>Which WhatsApp do you want to use?</h2><p className="muted">Choose the account used for this campaign workspace.</p><button className="source-card" onClick={()=>onChoose('WhatsApp Business')}><BriefcaseBusiness size={24}/><span><b>WhatsApp Business</b><small>Business groups, contacts and saved recipients</small></span></button><button className="source-card" onClick={()=>onChoose('WhatsApp')}><MessageCircleMore size={24}/><span><b>WhatsApp</b><small>Personal WhatsApp groups and contacts</small></span></button><label className="remember"><input type="checkbox" checked={remember} onChange={e=>setRemember(e.target.checked)}/> Remember my choice</label></div></div>
+}
+
+function AddRecipientModal({type,source,onClose,onAdd}:{type:RecipientType,source:Source,onClose:()=>void,onAdd:(r:Recipient)=>void}){
+  const [name,setName]=useState(''); const [phone,setPhone]=useState(''); const [category,setCategory]=useState('News'); const [area,setArea]=useState(''); const [canSend,setCanSend]=useState<boolean|null>(type==='group'?null:true)
+  const valid=name.trim() && (type!=='personal'||phone.trim()) && (type!=='group'||canSend===true)
+  return <div className="modal-wrap" onMouseDown={e=>{if(e.target===e.currentTarget)onClose()}}><div className="modal"><div className="modal-head"><div><div className="eyebrow">{labels[type].toUpperCase()} MASTER</div><h2>Add {labels[type]}</h2></div><button className="iconbtn" onClick={onClose}>×</button></div><label>Name<input value={name} onChange={e=>setName(e.target.value)} placeholder={`Enter ${labels[type].toLowerCase()} name`}/></label>{type==='personal'?<label>Mobile number<input value={phone} onChange={e=>setPhone(e.target.value)} placeholder="+91..."/></label>:<div className="two-col"><label>Category<select value={category} onChange={e=>setCategory(e.target.value)}><option>News</option><option>Political</option><option>Media</option><option>Jobs</option><option>Business</option><option>Health</option><option>Other</option></select></label><label>Area<input value={area} onChange={e=>setArea(e.target.value)} placeholder="Sakoli"/></label></div>}{type==='group'&&<div className="permission-box"><b>Can you send messages in this group?</b><p>If WhatsApp shows “Only admins can send messages”, choose No.</p><div className="choice-row"><button className={canSend===true?'choice yes selected':'choice yes'} onClick={()=>setCanSend(true)}><CheckCircle2 size={18}/> Yes</button><button className={canSend===false?'choice no selected':'choice no'} onClick={()=>setCanSend(false)}><Ban size={18}/> No, admin only</button></div></div>}{type==='group'&&canSend===false&&<div className="error"><ShieldAlert size={19}/><div><b>This group cannot be added.</b><span>Admin-only groups are excluded from the active master.</span></div></div>}<button disabled={!valid} className="primary fullbtn" onClick={()=>valid&&onAdd({id:crypto.randomUUID(),name:name.trim(),type,source,phone:phone.trim()||undefined,category:type==='personal'?undefined:category,area:area.trim()||undefined,canSend:true})}><Plus size={18}/> Add to Master</button></div></div>
 }
