@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { Ban, BriefcaseBusiness, CheckCircle2, Contact, Layers3, Megaphone, MessageCircleMore, Plus, Radio, Search, ShieldAlert, Users, UsersRound } from 'lucide-react'
+import { Ban, BriefcaseBusiness, CheckCircle2, Contact, Layers3, Megaphone, MessageCircleMore, Plus, Radio, Search, ShieldAlert, Upload, Users, UsersRound } from 'lucide-react'
 
 type Source = 'WhatsApp' | 'WhatsApp Business'
 type RecipientType = 'personal' | 'group' | 'community' | 'channel'
@@ -60,14 +60,73 @@ export default function Home(){
   function changeSource(){ localStorage.removeItem('jb-wa-source'); setSource(null) }
   function toggle(id:string){ setCampaign(c=>({...c,selectedIds:c.selectedIds.includes(id)?c.selectedIds.filter(x=>x!==id):[...c.selectedIds,id]})) }
 
-  async function importContacts(){
+  async function importContactsFromDevice(){
     const nav = navigator as Navigator & { contacts?: { select:(props:string[],opts:{multiple:boolean})=>Promise<Array<{name?:string[],tel?:string[]}>> } }
-    if(!nav.contacts?.select){ alert('या browser मध्ये Contact Picker उपलब्ध नाही. Personal contact manually add करा.'); return }
+    if(!nav.contacts?.select) return false
     try{
       const picked = await nav.contacts.select(['name','tel'],{multiple:true})
-      const fresh: Recipient[] = picked.flatMap((c,i)=> (c.tel||[]).slice(0,1).map(t=>({id:crypto.randomUUID(),name:c.name?.[0]||t,type:'personal' as const,source:source||'WhatsApp',phone:t,canSend:true})))
-      setRecipients(r=>[...r,...fresh])
-    }catch{}
+      const fresh: Recipient[] = picked.flatMap(c=> (c.tel||[]).slice(0,1).map(t=>({id:crypto.randomUUID(),name:c.name?.[0]||t,type:'personal' as const,source:source||'WhatsApp',phone:t,canSend:true})))
+      if(fresh.length) setRecipients(r=>[...r,...fresh])
+      return true
+    }catch{ return true }
+  }
+
+  function importFromFile(type:RecipientType){
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.accept = '.csv,.txt,.json'
+    input.onchange = async () => {
+      const file = input.files?.[0]
+      if(!file) return
+      const text = await file.text()
+      const imported: Recipient[] = []
+      try{
+        if(file.name.toLowerCase().endsWith('.json')){
+          const rows = JSON.parse(text)
+          if(Array.isArray(rows)) rows.forEach((row:any)=>{
+            if(!row?.name) return
+            imported.push({
+              id:crypto.randomUUID(),
+              name:String(row.name).trim(),
+              type,
+              source:source||'WhatsApp',
+              phone:type==='personal' ? String(row.phone||'').trim()||undefined : undefined,
+              category:type==='personal' ? undefined : String(row.category||'Other').trim(),
+              area:type==='personal' ? undefined : String(row.area||'').trim()||undefined,
+              canSend:type==='group' ? String(row.canSend??'true').toLowerCase()!=='false' : true,
+            })
+          })
+        }else{
+          const lines = text.split(/\r?\n/).map(x=>x.trim()).filter(Boolean)
+          lines.forEach((line,index)=>{
+            const cols = line.split(',').map(x=>x.trim())
+            if(index===0 && ['name','contact name','group name','community name','channel name'].includes(cols[0]?.toLowerCase())) return
+            if(!cols[0]) return
+            if(type==='personal'){
+              if(!cols[1]) return
+              imported.push({id:crypto.randomUUID(),name:cols[0],phone:cols[1],type,source:source||'WhatsApp',canSend:true})
+            }else{
+              imported.push({id:crypto.randomUUID(),name:cols[0],category:cols[1]||'Other',area:cols[2]||undefined,type,source:source||'WhatsApp',canSend:type==='group' ? (cols[3]?.toLowerCase()!=='no' && cols[3]?.toLowerCase()!=='false') : true})
+            }
+          })
+        }
+      }catch{
+        alert('Import file वाचता आला नाही. CSV, TXT किंवा JSON format तपासा.')
+        return
+      }
+      if(!imported.length){ alert('Import करण्यासाठी valid records सापडले नाहीत.'); return }
+      setRecipients(r=>[...r,...imported])
+      alert(`${imported.length} ${labels[type].toLowerCase()} imported.`)
+    }
+    input.click()
+  }
+
+  async function importMaster(type:RecipientType){
+    if(type==='personal'){
+      const handled = await importContactsFromDevice()
+      if(handled) return
+    }
+    importFromFile(type)
   }
 
   return <main className="shell">
@@ -92,11 +151,12 @@ export default function Home(){
       </div>
       <div className="toolbar">
         <div className="search"><Search size={18}/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder={`Search ${labels[masterTab].toLowerCase()}`}/></div>
-        <div className="toolbar-actions">{masterTab==='personal'&&<button className="secondary" onClick={importContacts}><Contact size={18}/> Import Contacts</button>}<button className="primary" onClick={()=>setShowAdd(true)}><Plus size={18}/> Add {labels[masterTab]}</button></div>
+        <div className="toolbar-actions"><button className="secondary" onClick={()=>importMaster(masterTab)}><Upload size={18}/> Import {labels[masterTab]}</button><button className="primary" onClick={()=>setShowAdd(true)}><Plus size={18}/> Add {labels[masterTab]}</button></div>
       </div>
 
-      {masterTab==='group' && <div className="notice"><ShieldAlert size={19}/><div><b>Admin-only protection is ON.</b><span>Only groups where you can send messages are kept active.</span></div></div>}
-      {(masterTab==='group'||masterTab==='community'||masterTab==='channel') && <div className="info-note">WhatsApp currently does not expose an official public API for this web app to automatically read your full {labels[masterTab].toLowerCase()} list. Add/register them here once and they remain available in your master.</div>}
+      {masterTab==='personal' && <div className="info-note">On supported Android browsers, Import Personal opens the device contact picker. Otherwise CSV/TXT/JSON import is available. CSV format: Name,Phone.</div>}
+      {masterTab==='group' && <div className="notice"><ShieldAlert size={19}/><div><b>Admin-only protection is ON.</b><span>CSV format: Name,Category,Area,CanSend. Put No/False in CanSend for admin-only groups.</span></div></div>}
+      {(masterTab==='community'||masterTab==='channel') && <div className="info-note">Import file format: Name,Category,Area. WhatsApp does not provide this web app an official API to read the full list directly from your account.</div>}
 
       <div className="cards">{visible.length===0?<div className="empty">No {labels[masterTab].toLowerCase()} added yet.</div>:visible.map(r=><article className="group-card" key={r.id}><div className="avatar">{r.name.slice(0,2).toUpperCase()}</div><div className="group-main"><div className="group-title"><h3>{r.name}</h3><span className="pill source-pill">{r.source==='WhatsApp Business'?'Business':'WhatsApp'}</span></div><p>{r.phone || [r.category,r.area].filter(Boolean).join(' · ') || labels[r.type]}</p><div className={r.canSend?'status ok':'status blocked'}>{r.canSend?<><CheckCircle2 size={15}/> Active</>:<><Ban size={15}/> Admin Only</>}</div></div></article>)}</div>
     </> : <section className="campaign-grid">
