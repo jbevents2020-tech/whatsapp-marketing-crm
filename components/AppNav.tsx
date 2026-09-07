@@ -12,6 +12,7 @@ const items = [
 
 export default function AppNav(){
   const pathname = usePathname()
+  if(pathname==='/' || pathname.startsWith('/login') || pathname.startsWith('/connect')) return null
   return <nav className="app-nav" aria-label="CRM navigation">
     {items.map(item=>{
       const Icon=item.icon
