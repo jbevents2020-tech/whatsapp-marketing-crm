@@ -1,4 +1,5 @@
 import './globals.css'
+import './nav.css'
 import AppNav from '../components/AppNav'
 
 export const metadata = {
