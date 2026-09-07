@@ -1,19 +1,28 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { ArrowRight, Contact, History, Import, Megaphone, Radio, Users, UsersRound } from 'lucide-react'
+import { ArrowRight, Contact, History, Import, LogOut, Megaphone, Radio, Users, UsersRound } from 'lucide-react'
 
 type RecipientType='personal'|'group'|'community'|'channel'
 type Recipient={id:string,name:string,type:RecipientType,canSend:boolean}
 type CampaignHistory={id:string,title:string,status?:string,selectedIds?:string[],doneIds?:string[]}
 
+type Source='WhatsApp'|'WhatsApp Business'
+
 export default function Dashboard(){
  const [recipients,setRecipients]=useState<Recipient[]>([])
  const [history,setHistory]=useState<CampaignHistory[]>([])
+ const [source,setSource]=useState<Source|'Not selected'>('Not selected')
  useEffect(()=>{
   setRecipients(JSON.parse(localStorage.getItem('jb-recipients')||'[]'))
   setHistory(JSON.parse(localStorage.getItem('jb-campaign-history')||'[]'))
+  setSource((localStorage.getItem('jb-wa-source') as Source)||'Not selected')
  },[])
+ function changeAccount(){
+  localStorage.removeItem('jb-wa-source')
+  document.cookie='jb-wa-connected=; Path=/; Max-Age=0; SameSite=Lax'
+  location.href='/connect'
+ }
  const personal=recipients.filter(r=>r.type==='personal').length
  const groups=recipients.filter(r=>r.type==='group').length
  const communities=recipients.filter(r=>r.type==='community').length
@@ -27,7 +36,7 @@ export default function Dashboard(){
   {title:'Campaign History',desc:'Draft, in-progress आणि completed campaigns पहा.',href:'/campaign#history',icon:<History size={28}/>},
  ]
  return <main className="shell">
-  <header className="topbar"><div><div className="eyebrow">JB DIGITAL</div><h1>WhatsApp CRM Dashboard</h1><div className="source-line">Import → Recipient Master → Campaign → History</div></div><div className="wa-dot">WA</div></header>
+  <header className="topbar"><div><div className="eyebrow">JB DIGITAL</div><h1>WhatsApp CRM Dashboard</h1><div className="source-line">Connected workspace: {source}</div></div><div className="toolbar-actions"><button className="secondary" onClick={changeAccount}><LogOut size={18}/> Change WhatsApp</button><div className="wa-dot">WA</div></div></header>
   <section className="stats">
    <Stat icon={<Contact size={20}/>} label="Personal" value={personal}/>
    <Stat icon={<Users size={20}/>} label="Groups" value={groups}/>
