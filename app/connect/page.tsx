@@ -19,7 +19,7 @@ export default function ConnectPage(){
     if(!confirmed) return
     localStorage.setItem('jb-wa-source',source)
     document.cookie = 'jb-wa-connected=1; Path=/; Max-Age=2592000; SameSite=Lax'
-    window.location.href='/import'
+    window.location.href='/dashboard'
   }
 
   return <main className="connect-shell">
@@ -33,7 +33,7 @@ export default function ConnectPage(){
       <div className="qr-panel"><QrCode size={44}/><div><h2>Step 1 · QR Login</h2><p>खालील button दाबल्यावर official WhatsApp Web उघडेल. Phone मध्ये WhatsApp → Linked devices → Link a device → QR scan करा.</p></div></div>
       <button className="primary connect-primary" onClick={openOfficialQr}><ExternalLink size={19}/> Open Official WhatsApp QR</button>
       <label className={opened?'confirm-link':'confirm-link disabled'}><input type="checkbox" disabled={!opened} checked={confirmed} onChange={e=>setConfirmed(e.target.checked)}/><span><b>मी QR scan करून WhatsApp link केले आहे</b><small>ही confirmation फक्त onboarding पूर्ण करण्यासाठी आहे.</small></span></label>
-      <button className="primary connect-primary" disabled={!confirmed} onClick={continueToApp}><CheckCircle2 size={19}/> Continue to Import Center</button>
+      <button className="primary connect-primary" disabled={!confirmed} onClick={continueToApp}><CheckCircle2 size={19}/> Continue to Dashboard</button>
       <div className="official-note"><ShieldCheck size={18}/><span>QR login official WhatsApp Web वरच होते. JB app तुमचा WhatsApp Web QR/session capture किंवा store करत नाही.</span></div>
     </section>
   </main>
